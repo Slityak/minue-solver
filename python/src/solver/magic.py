@@ -27,6 +27,7 @@ class SolverMagics(Magics):
         self._client = client
         self._last_question: str | None = None
         self._last_code: str | None = None
+        self._write_into_cell = True
 
     def _get_client(self) -> SolverClient:
         if self._client is None:
@@ -37,6 +38,7 @@ class SolverMagics(Magics):
     @argument("--explain", action="store_true", help="Step-by-step explanation in Hungarian.")
     @argument("--check", metavar="ANSWER", help="Check your own answer and get a hint if it is wrong.")
     @argument("--no-run", action="store_true", help="Do not run the returned code locally.")
+    @argument("--keep", action="store_true", help="Keep the cell as is instead of writing the code into it.")
     @argument(
         "--fixes",
         type=int,
@@ -45,7 +47,7 @@ class SolverMagics(Magics):
     )
     @cell_magic
     def solve(self, line: str, cell: str) -> None:
-        """%%solve [--explain] [--check ANSWER] [--no-run] [--fixes N]"""
+        """%%solve [--explain] [--check ANSWER] [--no-run] [--keep] [--fixes N]"""
         args = parse_argstring(self.solve, line)
         question = cell.strip()
         if not question:
@@ -63,7 +65,10 @@ class SolverMagics(Magics):
             display(Markdown(render(result, mode)))
             return
         self._last_question = question
-        self._show_and_run(question, result, mode, run=not args.no_run, fixes=args.fixes)
+        self._write_into_cell = not args.keep
+        code = self._show_and_run(question, result, mode, run=not args.no_run, fixes=args.fixes)
+        if code and self._write_into_cell:
+            self.shell.set_next_input(cell_with_code(question, code), replace=True)
 
     @line_magic
     def fix(self, line: str) -> None:
@@ -75,7 +80,10 @@ class SolverMagics(Magics):
             return
         question = line.strip() or self._last_question or UNKNOWN_TASK
         self._last_question = question
-        self._repair_and_run(question, code, error, fixes=max(DEFAULT_FIX_ATTEMPTS, 1))
+        self._write_into_cell = True
+        fixed = self._repair_and_run(question, code, error, fixes=DEFAULT_FIX_ATTEMPTS)
+        if fixed and fixed != code:
+            self.shell.set_next_input(fixed, replace=True)
 
     def _code_to_fix(self) -> str | None:
         """The previous cell's source, or the last solver script if that cell was a %%solve."""
@@ -85,38 +93,41 @@ class SolverMagics(Magics):
             return self._last_code
         return previous
 
-    def _show_and_run(self, question: str, result: SolveResult, mode: str, run: bool, fixes: int) -> None:
+    def _show_and_run(self, question: str, result: SolveResult, mode: str, run: bool, fixes: int) -> str:
+        """Show the result, run it locally, repair it if needed; return the final code."""
         self._last_code = result.code
-        display(Markdown(render(result, mode)))
+        display(Markdown(render(result, mode, collapse_code=self._write_into_cell)))
         if not run or not result.code:
-            return
+            return result.code
         output, error = run_locally(result.code)
         if error is None:
             display(Markdown(render_output(output)))
-            return
+            return result.code
         display(Markdown(render_failure(output, error)))
-        self._repair_and_run(question, result.code, error, fixes)
+        return self._repair_and_run(question, result.code, error, fixes)
 
-    def _repair_and_run(self, question: str, code: str, error: str, fixes: int) -> None:
+    def _repair_and_run(self, question: str, code: str, error: str, fixes: int) -> str:
+        """Ask for fixes until the code runs locally or the attempts run out; return the last code."""
         for attempt in range(1, fixes + 1):
             display(Markdown(f"🔧 Javítás kérése ({attempt}/{fixes})…"))
             try:
                 result = self._get_client().fix(question, code, error)
             except (SolverConfigError, SolverRequestError) as request_error:
                 display(Markdown(f"❌ **Hiba:** {request_error}"))
-                return
+                return code
             self._last_code = result.code
-            display(Markdown(render(result, "fix")))
+            display(Markdown(render(result, "fix", collapse_code=self._write_into_cell)))
             output, error = run_locally(result.code)
             if error is None:
                 display(Markdown(render_output(output)))
-                return
+                return result.code
             display(Markdown(render_failure(output, error)))
             code = result.code
         display(Markdown("❌ A javított kód is elhalt. Futtasd újra a `%fix`-et, vagy pontosítsd a feladatot."))
+        return code
 
 
-def render(result: SolveResult, mode: str) -> str:
+def render(result: SolveResult, mode: str, collapse_code: bool = False) -> str:
     """Build the Markdown shown under the cell."""
     if mode == "check":
         verdict = "✅ Helyes!" if result.answer.strip().lower() == "correct" else "❌ Nem egészen."
@@ -126,8 +137,17 @@ def render(result: SolveResult, mode: str) -> str:
     if mode in ("explain", "fix") and result.explanation:
         sections.append(result.explanation)
     if result.code:
-        sections.append(f"```python\n{result.code}\n```")
+        block = f"```python\n{result.code}\n```"
+        if collapse_code:
+            block = f"<details><summary>Kód (a cellába is beírva)</summary>\n\n{block}\n</details>"
+        sections.append(block)
     return "\n\n".join(sections)
+
+
+def cell_with_code(question: str, code: str) -> str:
+    """The new cell source: the task as comments, then the code, without the %%solve line."""
+    comments = [line if line.lstrip().startswith("#") or not line.strip() else f"# {line}" for line in question.splitlines()]
+    return "\n".join(comments).rstrip() + "\n" + code.strip() + "\n"
 
 
 def render_output(output: str) -> str:

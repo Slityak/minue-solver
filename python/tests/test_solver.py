@@ -6,7 +6,7 @@ from IPython.core.interactiveshell import InteractiveShell
 
 from solver import SolverClient, SolverRequestError, load_ipython_extension
 from solver.client import SolveResult, SolverConfigError, read_setting
-from solver.magic import SolverMagics, render, run_locally
+from solver.magic import SolverMagics, cell_with_code, render, run_locally
 
 MANHATTAN_CODE = (
     "import numpy as np\n"
@@ -78,6 +78,14 @@ class TestRendering:
         assert "Nem egészen" in markdown
         assert "print(28)" not in markdown
 
+    def test_collapsed_code_stays_available_as_fallback(self):
+        markdown = render(SolveResult("28", "print(28)", "", ""), "solve", collapse_code=True)
+        assert "<details>" in markdown and "print(28)" in markdown
+
+    def test_cell_with_code_keeps_task_as_comments_and_drops_magic(self):
+        source = cell_with_code("# Adott X...\nMi a távolság?", "print(28)\n")
+        assert source == "# Adott X...\n# Mi a távolság?\nprint(28)\n"
+
     def test_run_locally_captures_stdout(self):
         assert run_locally(MANHATTAN_CODE) == ("28", None)
 
@@ -98,10 +106,41 @@ class TestMagicInIPython:
         assert "solve" in shell.magics_manager.magics["cell"]
 
     @pytest.fixture
+    def written(self, shell, monkeypatch) -> list[tuple[str, bool]]:
+        written: list[tuple[str, bool]] = []
+        monkeypatch.setattr(shell, "set_next_input", lambda text, replace=False: written.append((text, replace)))
+        return written
+
+    @pytest.fixture
     def shown(self, monkeypatch) -> list[str]:
         shown: list[str] = []
         monkeypatch.setattr("solver.magic.display", lambda obj: shown.append(obj.data))
         return shown
+
+    def test_solution_is_written_into_the_cell_under_the_task(self, shell, shown, written):
+        client, _ = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE})
+        shell.register_magics(SolverMagics(shell, client=client))
+
+        shell.run_cell_magic("solve", "", "# Manhattan távolság?\n")
+
+        assert written == [("# Manhattan távolság?\n" + MANHATTAN_CODE + "\n", True)]
+
+    def test_keep_flag_leaves_the_cell_alone(self, shell, shown, written):
+        client, _ = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE})
+        shell.register_magics(SolverMagics(shell, client=client))
+
+        shell.run_cell_magic("solve", "--keep", "# feladat")
+
+        assert written == []
+        assert "<details>" not in "\n".join(shown)
+
+    def test_check_mode_never_writes_the_solution_into_the_cell(self, shell, shown, written):
+        client, _ = client_returning(200, {"answer": "incorrect", "code": "print(28)", "explanation": "Tipp."})
+        shell.register_magics(SolverMagics(shell, client=client))
+
+        shell.run_cell_magic("solve", "--check 27", "# feladat")
+
+        assert written == []
 
     def test_magic_solves_and_runs_locally(self, shell, shown):
         client, session = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE, "stdout": "28"})
@@ -114,7 +153,7 @@ class TestMagicInIPython:
         assert "Eredmény: `28`" in output
         assert "Helyi futtatás:**\n```\n28\n```" in output
 
-    def test_failing_code_is_sent_back_for_repair(self, shell, shown):
+    def test_failing_code_is_sent_back_for_repair(self, shell, shown, written):
         client, session = client_returning(
             200,
             {"answer": "28", "code": "print(undefined_name)"},
@@ -131,6 +170,7 @@ class TestMagicInIPython:
         output = "\n".join(shown)
         assert "elhalt" in output and "Hiányzó változó." in output
         assert output.rstrip().endswith("28\n```")
+        assert written[0][0].endswith(MANHATTAN_CODE + "\n")
 
     def test_repair_gives_up_after_the_attempt_limit(self, shell, shown):
         broken = {"answer": "?", "code": "print(1/0)"}
@@ -151,7 +191,7 @@ class TestMagicInIPython:
         assert session.post.call_count == 1
         assert not any("elhalt" in text for text in shown)
 
-    def test_fix_magic_repairs_the_previous_failing_cell(self, shell, shown):
+    def test_fix_magic_repairs_the_previous_failing_cell(self, shell, shown, written):
         client, session = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE})
         shell.register_magics(SolverMagics(shell, client=client))
 
@@ -163,6 +203,7 @@ class TestMagicInIPython:
         assert sent["code"] == "import numpy as np\nprint(np.nonexistent(1))"
         assert "nonexistent" in sent["error"]
         assert "28" in shown[-1]
+        assert written == [(MANHATTAN_CODE, True)]
 
     def test_check_flag_selects_check_mode(self, shell):
         client, session = client_returning(200, {"answer": "correct", "code": "", "explanation": "Jó!"})

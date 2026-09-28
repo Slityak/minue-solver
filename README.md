@@ -52,7 +52,7 @@ Setup-cella (minden runtime-indítás után egyszer):
 # Mi lesz a 2. és 0. megfigyelés közötti Manhattan távolság?
 ```
 
-A válasz egy rövid, komment nélküli Python-kód és az eredmény. A kódot a Colab helyben is lefuttatja. Ha ott elhal (pl. eltérő numpy-verzió miatt), a hibát automatikusan visszaküldi javításra, és a javított kódot újra lefuttatja.
+A válasz egy rövid, komment nélküli Python-kód, ami a cellába íródik a kommentjeid alá, a `%%solve` sor helyére (a kimenetben az eredmény és a helyi futtatás kimenete látszik, a kód lenyitható tartalékként). Újrafuttatva a cella már sima Python-kódként fut. A kódot a Colab helyben is lefuttatja. Ha ott elhal (pl. eltérő numpy-verzió miatt), a hibát automatikusan visszaküldi javításra, és a javított kódot újra lefuttatja.
 
 | Kapcsoló | Hatás |
 |---|---|
@@ -60,6 +60,7 @@ A válasz egy rövid, komment nélküli Python-kód és az eredmény. A kódot a
 | `--explain` | ugyanez, lépésenkénti magyarázattal magyarul |
 | `--check 27` | ellenőrzi a saját válaszod; ha hibás, tippet ad a helyes szám elárulása nélkül |
 | `--no-run` | csak a kódot kéri le, helyben nem futtatja |
+| `--keep` | nem írja át a cellát, a kód csak a kimenetben jelenik meg |
 | `--fixes N` | legfeljebb hányszor kérjen javítást (alapértelmezés: 2) |
 
 Ha a kódot saját cellába másolod, és ott hal el, írd a következő cellába:
@@ -68,13 +69,13 @@ Ha a kódot saját cellába másolod, és ott hal el, írd a következő celláb
 %fix
 ```
 
-Ez az előző cella kódját és a hibaüzenetét küldi el javításra (ha az előző cella egy `%%solve` volt, akkor annak utolsó kódját). A `%fix` után megadhatod a feladatot is, ha kontextus kell hozzá.
+Ez az előző cella kódját és a hibaüzenetét küldi el javításra (ha az előző cella egy `%%solve` volt, akkor annak utolsó kódját), és a javított kódot a `%fix` cellájába írja. A `%fix` után megadhatod a feladatot is, ha kontextus kell hozzá.
 
 ## Tesztek
 
 ```bash
 cd worker && npm test && npm run typecheck      # 13 teszt, mockolt Claude API
-cd python && pip install -e ".[dev]" && pytest  # 16 teszt, valódi IPython shellben
+cd python && pip install -e ".[dev]" && pytest  # 21 teszt, valódi IPython shellben
 ```
 
 ## Biztonsági megjegyzések
