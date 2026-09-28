@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "datamining-solver"
-version = "0.3.0"
-description = "%%solve IPython magic that solves data-mining exercises via a Claude-backed Cloudflare Worker"
+name = "minue-solver"
+version = "0.4.0"
+description = "%%solve IPython magic that turns an exercise written in comments into short, runnable Python code"
 requires-python = ">=3.9"
 dependencies = ["ipython>=7", "requests>=2.28"]
 

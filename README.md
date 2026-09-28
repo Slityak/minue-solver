@@ -1,6 +1,6 @@
-# Data-mining solver (`%%solve`)
+# minue-solver (`%%solve`)
 
-Colab-ből használható `%%solve` cell magic, ami egy Cloudflare Workeren keresztül a Claude API-val oldja meg az adatbányászat kurzus numpy-feladatait. Claude a kódot ténylegesen lefuttatja (Anthropic code execution tool), nem fejben számol, a rendszerprompt pedig a kurzus notebookjainak konvencióit rögzíti.
+Colab-ből használható `%%solve` cell magic, ami egy Cloudflare Workeren keresztül a Claude API-val oldja meg a kurzus numpy-feladatait. Claude a kódot ténylegesen lefuttatja (Anthropic code execution tool), nem fejben számol, a rendszerprompt pedig a kurzus notebookjainak konvencióit rögzíti.
 
 ```
 Colab %%solve ──HTTPS + Bearer token──▶ Cloudflare Worker ──▶ Claude API (code execution)
@@ -13,7 +13,7 @@ Colab %%solve ──HTTPS + Bearer token──▶ Cloudflare Worker ──▶ Cl
 | Mappa | Tartalom |
 |---|---|
 | `worker/` | TypeScript Worker: `GET /health`, `POST /solve`, token-ellenőrzés, Claude-hívás, válasz-parszolás |
-| `python/` | `datamining-solver` csomag: `SolverClient` és a `%%solve` IPython extension |
+| `src/minue_solver/`, `tests/`, `pyproject.toml` | `minue-solver` csomag (a repó gyökere): `SolverClient` és a `%%solve` IPython extension |
 | `demo.ipynb` | Védésre előkészített Colab notebook |
 
 ## 1. Worker telepítése
@@ -23,11 +23,11 @@ cd worker
 npm install
 npx wrangler login
 npx wrangler secret put ANTHROPIC_API_KEY   # console.anthropic.com
-npx wrangler secret put SOLVER_TOKEN        # ugyanaz, mint a python/src/solver/client.py DEFAULT_SETTINGS-ében
+npx wrangler secret put SOLVER_TOKEN        # ugyanaz, mint a src/minue_solver/client.py DEFAULT_SETTINGS-ében
 npm run deploy
 ```
 
-Ellenőrzés: `https://datamining-solver.<fiók>.workers.dev/health` → `{"status":"ok"}`.
+Ellenőrzés: `https://minue-solver.<fiók>.workers.dev/health` → `{"status":"ok"}`.
 A modellt a `wrangler.toml` `MODEL` változója állítja (alapértelmezés: `claude-opus-5-5`).
 
 ## 2. Colab beállítása
@@ -37,8 +37,8 @@ Nincs mit beállítani: a Worker URL-je és a token be van építve a csomagba (
 Setup-cella (minden runtime-indítás után egyszer; frissítés után előbb Runtime → Restart session, mert a Python a már betöltött régi modult használja):
 
 ```python
-!pip install -q --force-reinstall --no-deps "git+https://github.com/Slityak/minue-solver.git#subdirectory=python"
-%load_ext solver
+!pip install -q --force-reinstall --no-deps "git+https://github.com/Slityak/minue-solver.git"
+%load_ext minue_solver
 ```
 
 ## 3. Használat
@@ -72,7 +72,7 @@ Ez az előző cella kódját és a hibaüzenetét küldi el javításra (ha az e
 
 ```bash
 cd worker && npm test && npm run typecheck      # 14 teszt, mockolt Claude API
-cd python && pip install -e ".[dev]" && pytest  # 23 teszt, valódi IPython shellben
+pip install -e ".[dev]" && pytest  # 23 teszt, valódi IPython shellben
 ```
 
 ## Biztonsági megjegyzések

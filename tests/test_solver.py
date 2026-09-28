@@ -4,9 +4,9 @@ import pytest
 import requests
 from IPython.core.interactiveshell import InteractiveShell
 
-from solver import SolverClient, SolverRequestError, load_ipython_extension
-from solver.client import DEFAULT_SETTINGS, SolveResult, SolverConfigError, read_setting
-from solver.magic import SolverMagics, cell_with_code, render_check, run_locally
+from minue_solver import SolverClient, SolverRequestError, load_ipython_extension
+from minue_solver.client import DEFAULT_SETTINGS, SolveResult, SolverConfigError, read_setting
+from minue_solver.magic import SolverMagics, cell_with_code, render_check, run_locally
 
 MANHATTAN_CODE = (
     "import numpy as np\n"
@@ -126,7 +126,7 @@ class TestMagicInIPython:
     @pytest.fixture
     def shown(self, monkeypatch) -> list[str]:
         shown: list[str] = []
-        monkeypatch.setattr("solver.magic.display", lambda obj: shown.append(obj.data))
+        monkeypatch.setattr("minue_solver.magic.display", lambda obj: shown.append(obj.data))
         return shown
 
     def test_solution_is_written_into_the_cell_under_the_task(self, shell, shown, written):

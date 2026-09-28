@@ -1,4 +1,4 @@
-"""HTTP client for the data-mining solver Worker."""
+"""HTTP client for the minue-solver Worker."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ DEFAULT_TIMEOUT_SECONDS = 120
 # Built-in so the package works right after pip install. The token is public by design:
 # the Worker's rate limits and the Anthropic spend limit are what protect the API key.
 DEFAULT_SETTINGS = {
-    URL_SETTING: "https://datamining-solver.kornel-dc5.workers.dev",
+    URL_SETTING: "https://minue-solver.kornel-dc5.workers.dev",
     TOKEN_SETTING: "e131ffd3919184d31b842f616ab7c218390fa38b1bf656b9751d2b06ea3c6a77",
 }
 

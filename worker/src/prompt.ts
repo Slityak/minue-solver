@@ -9,7 +9,7 @@ export interface SolveInput {
 }
 
 /**
- * Conventions taken from the course notebooks (github.com/ficstamas/data-mining).
+ * Conventions taken from the course notebooks.
  * Keeping them explicit makes the solver compute results "the way it was taught".
  */
 const COURSE_CONVENTIONS = `
@@ -61,7 +61,7 @@ versions than yours, so use APIs that work across versions). Execute it before a
 
 export function buildSystemPrompt(mode: SolveMode): string {
   return [
-    "You are a data-mining exercise solver for a university course.",
+    "You are an exercise solver for a university course.",
     COURSE_CONVENTIONS,
     OUTPUT_CONTRACT,
     MODE_RULES[mode],
