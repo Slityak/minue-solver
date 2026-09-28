@@ -1,0 +1,10 @@
+name = "datamining-solver"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+[vars]
+MODEL = "claude-opus-5-5"
+
+# Secrets (never commit them):
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put SOLVER_TOKEN
