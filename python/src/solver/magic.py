@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
+import ast
 import sys
 import traceback
 
 from IPython.core.magic import Magics, cell_magic, line_magic, magics_class
 from IPython.core.magic_arguments import argument, magic_arguments, parse_argstring
 from IPython.display import Markdown, display
+from IPython.utils.capture import CapturedIO, capture_output
 
 from .client import SolveResult, SolverClient, SolverConfigError, SolverRequestError
 
@@ -62,7 +62,7 @@ class SolverMagics(Magics):
             return
 
         if mode == "check":
-            display(Markdown(render(result, mode)))
+            display(Markdown(render_check(result)))
             return
         self._last_question = question
         self._write_into_cell = not args.keep
@@ -94,85 +94,78 @@ class SolverMagics(Magics):
         return previous
 
     def _show_and_run(self, question: str, result: SolveResult, mode: str, run: bool, fixes: int) -> str:
-        """Show the result, run it locally, repair it if needed; return the final code."""
+        """Run the code as if it were the cell, repairing it quietly if needed; return the final code.
+
+        Only what the cell itself would print is shown, plus the explanation in explain mode and
+        the code when it is not written into the cell.
+        """
         self._last_code = result.code
-        display(Markdown(render(result, mode, collapse_code=self._write_into_cell)))
+        if mode == "explain" and result.explanation:
+            display(Markdown(result.explanation))
+        if not self._write_into_cell and result.code:
+            display(Markdown(f"```python\n{result.code}\n```"))
         if not run or not result.code:
             return result.code
-        output, error = run_locally(result.code)
+        captured, error = run_locally(result.code, self.shell.user_ns)
         if error is None:
-            display(Markdown(render_output(output)))
+            captured.show()
             return result.code
-        display(Markdown(render_failure(output, error)))
         return self._repair_and_run(question, result.code, error, fixes)
 
     def _repair_and_run(self, question: str, code: str, error: str, fixes: int) -> str:
-        """Ask for fixes until the code runs locally or the attempts run out; return the last code."""
-        for attempt in range(1, fixes + 1):
-            display(Markdown(f"🔧 Javítás kérése ({attempt}/{fixes})…"))
+        """Ask for fixes until the code runs or the attempts run out; return the last code.
+
+        Failed attempts stay silent; if every attempt fails, the last traceback is shown
+        the way a failing cell would show it.
+        """
+        for _ in range(fixes):
             try:
                 result = self._get_client().fix(question, code, error)
             except (SolverConfigError, SolverRequestError) as request_error:
                 display(Markdown(f"❌ **Hiba:** {request_error}"))
                 return code
-            self._last_code = result.code
-            display(Markdown(render(result, "fix", collapse_code=self._write_into_cell)))
-            output, error = run_locally(result.code)
+            self._last_code = code = result.code
+            captured, error = run_locally(code, self.shell.user_ns)
             if error is None:
-                display(Markdown(render_output(output)))
-                return result.code
-            display(Markdown(render_failure(output, error)))
-            code = result.code
-        display(Markdown("❌ A javított kód is elhalt. Futtasd újra a `%fix`-et, vagy pontosítsd a feladatot."))
+                captured.show()
+                return code
+        print(error, file=sys.stderr)
         return code
 
 
-def render(result: SolveResult, mode: str, collapse_code: bool = False) -> str:
-    """Build the Markdown shown under the cell."""
-    if mode == "check":
-        verdict = "✅ Helyes!" if result.answer.strip().lower() == "correct" else "❌ Nem egészen."
-        return "\n\n".join(part for part in (f"### {verdict}", result.explanation) if part)
-
-    sections = [f"### Eredmény: `{result.answer}`"]
-    if mode in ("explain", "fix") and result.explanation:
-        sections.append(result.explanation)
-    if result.code:
-        block = f"```python\n{result.code}\n```"
-        if collapse_code:
-            block = f"<details><summary>Kód (a cellába is beírva)</summary>\n\n{block}\n</details>"
-        sections.append(block)
-    return "\n\n".join(sections)
+def render_check(result: SolveResult) -> str:
+    """The verdict shown for --check; the code is never shown so the answer is not leaked."""
+    verdict = "✅ Helyes!" if result.answer.strip().lower() == "correct" else "❌ Nem egészen."
+    return "\n\n".join(part for part in (f"### {verdict}", result.explanation) if part)
 
 
 def cell_with_code(question: str, code: str) -> str:
     """The new cell source: the task as comments, then the code, without the %%solve line."""
     comments = [line if line.lstrip().startswith("#") or not line.strip() else f"# {line}" for line in question.splitlines()]
-    return "\n".join(comments).rstrip() + "\n" + code.strip() + "\n"
+    return "\n".join(comments).rstrip() + "\n\n" + code.strip() + "\n"
 
 
-def render_output(output: str) -> str:
-    return f"**Helyi futtatás:**\n```\n{output or '(nincs kimenet)'}\n```"
+def run_locally(code: str, namespace: dict) -> tuple[CapturedIO, str | None]:
+    """Run code like a notebook cell in `namespace`; return its captured output and traceback or None.
 
-
-def render_failure(output: str, error: str) -> str:
-    printed = f"{output}\n" if output else ""
-    return f"⚠️ **A kód helyben elhalt:**\n```\n{printed}{error}\n```"
-
-
-def run_locally(code: str) -> tuple[str, str | None]:
-    """Execute the solver's code in an isolated namespace; return (stdout, traceback or None).
-
-    The code comes from our own Worker, which is the trust boundary that makes exec acceptable here.
+    Output is captured so a failed attempt shows nothing; a trailing expression is displayed
+    like a cell's Out value. The code comes from our own Worker, which is the trust boundary
+    that makes exec acceptable here.
     """
-    buffer = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(buffer):
-            exec(compile(code, "<solver>", "exec"), {"__name__": "__solver__"})
-    except Exception as error:  # Report any failure so it can be sent back for repair.
-        frames = error.__traceback__.tb_next if error.__traceback__ else None
-        text = "".join(traceback.format_exception(type(error), error, frames))
-        return buffer.getvalue().strip(), text.strip()[-MAX_ERROR_LENGTH:]
-    return buffer.getvalue().strip(), None
+    with capture_output() as captured:
+        try:
+            tree = ast.parse(code)
+            last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+            exec(compile(tree, "<solver>", "exec"), namespace)
+            if last is not None:
+                value = eval(compile(ast.Expression(last.value), "<solver>", "eval"), namespace)
+                if value is not None:
+                    display(value)
+        except Exception as error:  # Report any failure so it can be sent back for repair.
+            frames = error.__traceback__.tb_next if error.__traceback__ else None
+            text = "".join(traceback.format_exception(type(error), error, frames))
+            return captured, text.strip()[-MAX_ERROR_LENGTH:]
+    return captured, None
 
 
 def last_error() -> str | None:

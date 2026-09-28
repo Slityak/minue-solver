@@ -6,7 +6,7 @@ from IPython.core.interactiveshell import InteractiveShell
 
 from solver import SolverClient, SolverRequestError, load_ipython_extension
 from solver.client import DEFAULT_SETTINGS, SolveResult, SolverConfigError, read_setting
-from solver.magic import SolverMagics, cell_with_code, render, run_locally
+from solver.magic import SolverMagics, cell_with_code, render_check, run_locally
 
 MANHATTAN_CODE = (
     "import numpy as np\n"
@@ -75,31 +75,35 @@ class TestClient:
 
 
 class TestRendering:
-    def test_solve_mode_shows_answer_and_code_without_explanation(self):
-        markdown = render(SolveResult("0.5663", "print(1)", "Cholesky whitening.", ""), "solve")
-        assert "Eredmény: `0.5663`" in markdown
-        assert "```python\nprint(1)\n```" in markdown
-        assert "Cholesky" not in markdown
-
-    def test_check_mode_hides_code_so_the_answer_is_not_leaked(self):
-        markdown = render(SolveResult("incorrect", "print(28)", "Nézd meg az indexelést.", ""), "check")
-        assert "Nem egészen" in markdown
+    def test_check_verdict_hides_code_so_the_answer_is_not_leaked(self):
+        markdown = render_check(SolveResult("incorrect", "print(28)", "Nézd meg az indexelést.", ""))
+        assert "Nem egészen" in markdown and "Nézd meg" in markdown
         assert "print(28)" not in markdown
 
-    def test_collapsed_code_stays_available_as_fallback(self):
-        markdown = render(SolveResult("28", "print(28)", "", ""), "solve", collapse_code=True)
-        assert "<details>" in markdown and "print(28)" in markdown
-
-    def test_cell_with_code_keeps_task_as_comments_and_drops_magic(self):
+    def test_cell_with_code_keeps_task_as_comments_then_blank_line_then_code(self):
         source = cell_with_code("# Adott X...\nMi a távolság?", "print(28)\n")
-        assert source == "# Adott X...\n# Mi a távolság?\nprint(28)\n"
+        assert source == "# Adott X...\n# Mi a távolság?\n\nprint(28)\n"
 
-    def test_run_locally_captures_stdout(self):
-        assert run_locally(MANHATTAN_CODE) == ("28", None)
 
-    def test_run_locally_returns_traceback_instead_of_raising(self):
-        output, error = run_locally("print(1)\nprint(1/0)")
-        assert output == "1"
+class TestRunLocally:
+    @pytest.fixture(autouse=True)
+    def shell(self):
+        return InteractiveShell.instance()
+
+    def test_captures_stdout_and_defines_names_in_the_namespace(self):
+        namespace: dict = {}
+        captured, error = run_locally(MANHATTAN_CODE, namespace)
+        assert error is None and captured.stdout == "28\n"
+        assert "X" in namespace
+
+    def test_trailing_expression_is_displayed_like_a_cell_output(self):
+        captured, error = run_locally("x = 20\nx + 8", {})
+        assert error is None and captured.stdout == ""
+        assert captured.outputs[0].data["text/plain"] == "28"
+
+    def test_returns_traceback_instead_of_raising(self):
+        captured, error = run_locally("print(1)\nprint(1/0)", {})
+        assert captured.stdout == "1\n"
         assert "ZeroDivisionError" in error and "line 2" in error
 
 
@@ -131,16 +135,16 @@ class TestMagicInIPython:
 
         shell.run_cell_magic("solve", "", "# Manhattan távolság?\n")
 
-        assert written == [("# Manhattan távolság?\n" + MANHATTAN_CODE + "\n", True)]
+        assert written == [("# Manhattan távolság?\n\n" + MANHATTAN_CODE + "\n", True)]
 
-    def test_keep_flag_leaves_the_cell_alone(self, shell, shown, written):
+    def test_keep_flag_leaves_the_cell_alone_and_shows_the_code(self, shell, shown, written):
         client, _ = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE})
         shell.register_magics(SolverMagics(shell, client=client))
 
         shell.run_cell_magic("solve", "--keep", "# feladat")
 
         assert written == []
-        assert "<details>" not in "\n".join(shown)
+        assert shown == [f"```python\n{MANHATTAN_CODE}\n```"]
 
     def test_check_mode_never_writes_the_solution_into_the_cell(self, shell, shown, written):
         client, _ = client_returning(200, {"answer": "incorrect", "code": "print(28)", "explanation": "Tipp."})
@@ -150,18 +154,28 @@ class TestMagicInIPython:
 
         assert written == []
 
-    def test_magic_solves_and_runs_locally(self, shell, shown):
-        client, session = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE, "stdout": "28"})
+    def test_output_is_exactly_what_the_code_prints(self, shell, shown, written, capsys):
+        client, session = client_returning(
+            200, {"answer": "28", "code": MANHATTAN_CODE, "explanation": "Manhattan.", "stdout": "28"}
+        )
         shell.register_magics(SolverMagics(shell, client=client))
 
         shell.run_cell_magic("solve", "", "# Mi a Manhattan távolság a 2. és 0. sor között?")
 
         assert session.post.call_args.kwargs["json"]["mode"] == "solve"
-        output = "\n".join(shown)
-        assert "Eredmény: `28`" in output
-        assert "Helyi futtatás:**\n```\n28\n```" in output
+        assert shown == []
+        assert capsys.readouterr() == ("28\n", "")
 
-    def test_failing_code_is_sent_back_for_repair(self, shell, shown, written):
+    def test_explain_mode_adds_only_the_explanation(self, shell, shown, written, capsys):
+        client, _ = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE, "explanation": "Lépések."})
+        shell.register_magics(SolverMagics(shell, client=client))
+
+        shell.run_cell_magic("solve", "--explain", "# feladat")
+
+        assert shown == ["Lépések."]
+        assert capsys.readouterr().out == "28\n"
+
+    def test_failing_code_is_repaired_quietly(self, shell, shown, written, capsys):
         client, session = client_returning(
             200,
             {"answer": "28", "code": "print(undefined_name)"},
@@ -175,31 +189,33 @@ class TestMagicInIPython:
         assert fix_request["mode"] == "fix" and fix_request["question"] == "feladat"
         assert fix_request["code"] == "print(undefined_name)"
         assert "NameError" in fix_request["error"]
-        output = "\n".join(shown)
-        assert "elhalt" in output and "Hiányzó változó." in output
-        assert output.rstrip().endswith("28\n```")
+        assert shown == []
+        assert capsys.readouterr() == ("28\n", "")
         assert written[0][0].endswith(MANHATTAN_CODE + "\n")
 
-    def test_repair_gives_up_after_the_attempt_limit(self, shell, shown):
-        broken = {"answer": "?", "code": "print(1/0)"}
+    def test_repair_gives_up_showing_only_the_last_traceback(self, shell, shown, written, capsys):
+        broken = {"answer": "?", "code": "print('partial')\nprint(1/0)"}
         client, session = client_returning(200, broken, broken)
         shell.register_magics(SolverMagics(shell, client=client))
 
         shell.run_cell_magic("solve", "--fixes 1", "feladat")
 
         assert session.post.call_count == 2
-        assert "is elhalt" in shown[-1]
+        out, err = capsys.readouterr()
+        assert out == "" and err.startswith("Traceback") and "ZeroDivisionError" in err
+        assert shown == []
 
-    def test_no_run_skips_local_execution(self, shell, shown):
+    def test_no_run_only_writes_the_cell(self, shell, shown, written, capsys):
         client, session = client_returning(200, {"answer": "?", "code": "print(1/0)"})
         shell.register_magics(SolverMagics(shell, client=client))
 
         shell.run_cell_magic("solve", "--no-run", "feladat")
 
         assert session.post.call_count == 1
-        assert not any("elhalt" in text for text in shown)
+        assert shown == [] and capsys.readouterr() == ("", "")
+        assert written == [("# feladat\n\nprint(1/0)\n", True)]
 
-    def test_fix_magic_repairs_the_previous_failing_cell(self, shell, shown, written):
+    def test_fix_magic_repairs_the_previous_failing_cell(self, shell, shown, written, capsys):
         client, session = client_returning(200, {"answer": "28", "code": MANHATTAN_CODE})
         shell.register_magics(SolverMagics(shell, client=client))
 
@@ -210,7 +226,7 @@ class TestMagicInIPython:
         assert sent["mode"] == "fix"
         assert sent["code"] == "import numpy as np\nprint(np.nonexistent(1))"
         assert "nonexistent" in sent["error"]
-        assert "28" in shown[-1]
+        assert capsys.readouterr().out.endswith("28\n")
         assert written == [(MANHATTAN_CODE, True)]
 
     def test_check_flag_selects_check_mode(self, shell):

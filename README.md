@@ -49,15 +49,15 @@ Setup-cella (minden runtime-indítás után egyszer; frissítés után előbb Ru
 # Mi lesz a 2. és 0. megfigyelés közötti Manhattan távolság?
 ```
 
-A válasz egy rövid, komment nélküli Python-kód, ami a cellába íródik a kommentjeid alá, a `%%solve` sor helyére (a kimenetben az eredmény és a helyi futtatás kimenete látszik, a kód lenyitható tartalékként). Újrafuttatva a cella már sima Python-kódként fut. A kódot a Colab helyben is lefuttatja. Ha ott elhal (pl. eltérő numpy-verzió miatt), a hibát automatikusan visszaküldi javításra, és a javított kódot újra lefuttatja.
+A `%%solve` sor helyére a cellába íródik egy rövid, komment nélküli Python-kód a kommentjeid alá (köztük egy üres sorral), és le is fut a notebook névterében. A kimenet pontosan az, amit a kód kiír, semmi más: mintha a cellát te futtattad volna. Ha a futtatás elhal (pl. eltérő numpy-verzió miatt), a hibát csendben visszaküldi javításra, és csak a sikeres futás kimenete jelenik meg; ha minden próbálkozás elhal, az utolsó traceback látszik.
 
 | Kapcsoló | Hatás |
 |---|---|
-| *(nincs)* | eredmény + kód + helyi futtatás, hiba esetén automatikus javítás |
-| `--explain` | ugyanez, lépésenkénti magyarázattal magyarul |
+| *(nincs)* | kód a cellába, kimenet = a kód kimenete, hiba esetén automatikus javítás |
+| `--explain` | ugyanez, a kimenet előtt lépésenkénti magyarázattal magyarul |
 | `--check 27` | ellenőrzi a saját válaszod; ha hibás, tippet ad a helyes szám elárulása nélkül |
-| `--no-run` | csak a kódot kéri le, helyben nem futtatja |
-| `--keep` | nem írja át a cellát, a kód csak a kimenetben jelenik meg |
+| `--no-run` | csak beírja a kódot a cellába, nem futtatja |
+| `--keep` | nem írja át a cellát, a kód a kimenetben jelenik meg |
 | `--fixes N` | legfeljebb hányszor kérjen javítást (alapértelmezés: 2) |
 
 Ha a kódot saját cellába másolod, és ott hal el, írd a következő cellába:
