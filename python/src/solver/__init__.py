@@ -1,7 +1,7 @@
 """IPython extension providing the %%solve cell magic.
 
 Usage in Colab:
-    !pip install -q git+https://github.com/Slityak/minue-solver.git#subdirectory=python
+    !pip install -q --force-reinstall --no-deps git+https://github.com/Slityak/minue-solver.git#subdirectory=python
     %load_ext solver
 """
 

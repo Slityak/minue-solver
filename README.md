@@ -34,10 +34,10 @@ A modellt a `wrangler.toml` `MODEL` változója állítja (alapértelmezés: `cl
 
 Nincs mit beállítani: a Worker URL-je és a token be van építve a csomagba (`DEFAULT_SETTINGS` a `client.py`-ban). Ha másik Workert használnál, a Colab Secrets-ben vagy környezeti változóban megadott `SOLVER_URL` / `SOLVER_TOKEN` felülírja ezeket.
 
-Setup-cella (minden runtime-indítás után egyszer):
+Setup-cella (minden runtime-indítás után egyszer; frissítés után előbb Runtime → Restart session, mert a Python a már betöltött régi modult használja):
 
 ```python
-!pip install -q "git+https://github.com/Slityak/minue-solver.git#subdirectory=python"
+!pip install -q --force-reinstall --no-deps "git+https://github.com/Slityak/minue-solver.git#subdirectory=python"
 %load_ext solver
 ```
 
