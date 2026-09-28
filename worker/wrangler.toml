@@ -8,3 +8,14 @@ MODEL = "claude-opus-5-5"
 # Secrets (never commit them):
 #   npx wrangler secret put ANTHROPIC_API_KEY
 #   npx wrangler secret put SOLVER_TOKEN
+
+# The client token ships in the public Python package, so these limits are the real guard.
+[[ratelimits]]
+name = "PER_IP_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[ratelimits]]
+name = "GLOBAL_LIMITER"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }

@@ -5,7 +5,7 @@ import requests
 from IPython.core.interactiveshell import InteractiveShell
 
 from solver import SolverClient, SolverRequestError, load_ipython_extension
-from solver.client import SolveResult, SolverConfigError, read_setting
+from solver.client import DEFAULT_SETTINGS, SolveResult, SolverConfigError, read_setting
 from solver.magic import SolverMagics, cell_with_code, render, run_locally
 
 MANHATTAN_CODE = (
@@ -60,10 +60,18 @@ class TestClient:
         with pytest.raises(SolverRequestError, match="401: Unauthorized"):
             client.solve("x")
 
-    def test_missing_setting_has_actionable_message(self, monkeypatch):
+    def test_settings_fall_back_to_built_in_defaults(self, monkeypatch):
         monkeypatch.delenv("SOLVER_URL", raising=False)
+        assert read_setting("SOLVER_URL") == DEFAULT_SETTINGS["SOLVER_URL"]
+
+    def test_environment_overrides_the_default(self, monkeypatch):
+        monkeypatch.setenv("SOLVER_URL", "https://other.test")
+        assert read_setting("SOLVER_URL") == "https://other.test"
+
+    def test_missing_setting_has_actionable_message(self, monkeypatch):
+        monkeypatch.delenv("SOLVER_OTHER", raising=False)
         with pytest.raises(SolverConfigError, match="Secrets"):
-            read_setting("SOLVER_URL")
+            read_setting("SOLVER_OTHER")
 
 
 class TestRendering:

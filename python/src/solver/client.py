@@ -14,6 +14,13 @@ URL_SETTING = "SOLVER_URL"
 TOKEN_SETTING = "SOLVER_TOKEN"
 DEFAULT_TIMEOUT_SECONDS = 120
 
+# Built-in so the package works right after pip install. The token is public by design:
+# the Worker's rate limits and the Anthropic spend limit are what protect the API key.
+DEFAULT_SETTINGS = {
+    URL_SETTING: "https://datamining-solver.kornel-dc5.workers.dev",
+    TOKEN_SETTING: "e131ffd3919184d31b842f616ab7c218390fa38b1bf656b9751d2b06ea3c6a77",
+}
+
 
 class SolverConfigError(RuntimeError):
     """Raised when the Worker URL or token is not configured."""
@@ -32,7 +39,7 @@ class SolveResult:
 
 
 def read_setting(name: str) -> str:
-    """Read a setting from Colab Secrets first, then from environment variables."""
+    """Read a setting from Colab Secrets, then environment variables, then the built-in default."""
     try:
         from google.colab import userdata  # type: ignore[import-not-found]
 
@@ -42,7 +49,7 @@ def read_setting(name: str) -> str:
     except Exception:  # Not running in Colab, or the secret is missing / not shared.
         pass
 
-    value = os.environ.get(name, "")
+    value = os.environ.get(name, "") or DEFAULT_SETTINGS.get(name, "")
     if not value:
         raise SolverConfigError(
             f"Missing setting '{name}'. Add it in Colab under Secrets (key icon) "

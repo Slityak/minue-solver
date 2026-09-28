@@ -23,7 +23,7 @@ cd worker
 npm install
 npx wrangler login
 npx wrangler secret put ANTHROPIC_API_KEY   # console.anthropic.com
-npx wrangler secret put SOLVER_TOKEN        # tetszőleges hosszú véletlen szöveg
+npx wrangler secret put SOLVER_TOKEN        # ugyanaz, mint a python/src/solver/client.py DEFAULT_SETTINGS-ében
 npm run deploy
 ```
 
@@ -32,10 +32,7 @@ A modellt a `wrangler.toml` `MODEL` változója állítja (alapértelmezés: `cl
 
 ## 2. Colab beállítása
 
-A kulcs ikonnál (Secrets) vedd fel, és engedélyezd a notebook hozzáférést:
-
-- `SOLVER_URL` = a Worker URL-je
-- `SOLVER_TOKEN` = ugyanaz, mint a Workernél
+Nincs mit beállítani: a Worker URL-je és a token be van építve a csomagba (`DEFAULT_SETTINGS` a `client.py`-ban). Ha másik Workert használnál, a Colab Secrets-ben vagy környezeti változóban megadott `SOLVER_URL` / `SOLVER_TOKEN` felülírja ezeket.
 
 Setup-cella (minden runtime-indítás után egyszer):
 
@@ -74,14 +71,14 @@ Ez az előző cella kódját és a hibaüzenetét küldi el javításra (ha az e
 ## Tesztek
 
 ```bash
-cd worker && npm test && npm run typecheck      # 13 teszt, mockolt Claude API
-cd python && pip install -e ".[dev]" && pytest  # 21 teszt, valódi IPython shellben
+cd worker && npm test && npm run typecheck      # 14 teszt, mockolt Claude API
+cd python && pip install -e ".[dev]" && pytest  # 23 teszt, valódi IPython shellben
 ```
 
 ## Biztonsági megjegyzések
 
 - Az API-kulcs csak Worker secretként létezik, a kliens sosem látja.
-- A `/solve` Bearer tokent kér, időállandó összehasonlítással.
+- A `/solve` Bearer tokent kér, időállandó összehasonlítással. A token a publikus csomagban van, tehát nem titok: a valódi védelem a Worker rate limitje (IP-nként 10, összesen 30 kérés percenként) és az Anthropic Console-ban beállított havi költési limit. Visszaéléskor új tokent kell generálni, és a Workerben meg a `client.py`-ban is cserélni.
 - A helyi futtatás `exec`-et használ: ez azért elfogadható, mert a kód a saját Workerünkből jön. Idegen végpontra állítva használd a `--no-run` kapcsolót.
 - A `fix` módban a kód és a hibaüzenet együtt legfeljebb 2×10 000 karakter lehet.
 - A kérdés hossza 5000 karakterre korlátozott, hogy a kulcsot ne lehessen nagy kérésekkel égetni.

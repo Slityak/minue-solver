@@ -5,6 +5,8 @@ export interface Env {
   ANTHROPIC_API_KEY: string;
   SOLVER_TOKEN: string;
   MODEL?: string;
+  PER_IP_LIMITER?: RateLimit;
+  GLOBAL_LIMITER?: RateLimit;
 }
 
 const DEFAULT_MODEL = "claude-opus-5-5";
@@ -33,6 +35,9 @@ export default {
     }
     if (!isAuthorized(request, env.SOLVER_TOKEN)) {
       return json({ error: "Unauthorized" }, 401);
+    }
+    if (await isRateLimited(request, env)) {
+      return json({ error: "Too many requests, try again in a minute" }, 429);
     }
 
     let payload: SolveRequest;
@@ -93,6 +98,14 @@ function validate(body: unknown): SolveRequest {
       error: mode === "fix" ? (error as string) : undefined,
     },
   };
+}
+
+/** The token is public (it ships in the pip package), so rate limits cap what a stranger can spend. */
+async function isRateLimited(request: Request, env: Env): Promise<boolean> {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const checks = [env.PER_IP_LIMITER?.limit({ key: ip }), env.GLOBAL_LIMITER?.limit({ key: "global" })];
+  const outcomes = await Promise.all(checks);
+  return outcomes.some((outcome) => outcome !== undefined && !outcome.success);
 }
 
 function isAuthorized(request: Request, expectedToken: string): boolean {

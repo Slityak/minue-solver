@@ -61,6 +61,19 @@ describe("routing and validation", () => {
     expect(await response.json()).toEqual({ error: "'error' is required in fix mode" });
   });
 
+  it("returns 429 when a rate limiter refuses", async () => {
+    const limiter = (success: boolean) => ({ limit: vi.fn().mockResolvedValue({ success }) });
+    const perIp = limiter(false);
+    const env: Env = { ...ENV, PER_IP_LIMITER: perIp, GLOBAL_LIMITER: limiter(true) };
+
+    const request = solveRequest({ question: "q" });
+    request.headers.set("cf-connecting-ip", "1.2.3.4");
+    const response = await worker.fetch(request, env);
+
+    expect(response.status).toBe(429);
+    expect(perIp.limit).toHaveBeenCalledWith({ key: "1.2.3.4" });
+  });
+
   it("returns 404 for unknown paths", async () => {
     const response = await worker.fetch(new Request("https://solver.test/nope"), ENV);
     expect(response.status).toBe(404);
